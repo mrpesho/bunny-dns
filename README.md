@@ -154,6 +154,36 @@ python main.py -c config.json
 | `--no-delete` | Don't delete records not in config |
 | `--api-key` | API key (defaults to `BUNNY_API_KEY` env var) |
 
+## Check Propagation Status
+
+After updating nameservers, check if DNS has propagated:
+
+```bash
+# Basic check
+python check_propagation.py example.com
+
+# Include pull zone hostname/SSL checks
+python check_propagation.py example.com -c config.json
+```
+
+Output:
+```
+NAMESERVERS: ✓ OK
+  Expected: coco.bunny.net, kiki.bunny.net
+  Current:  kiki.bunny.net, coco.bunny.net
+  → DNS is pointing to bunny.net
+
+DNS RECORDS:
+  ✓ A        @                    → 185.199.110.153, 185.199.111.153
+  ✓ AAAA     @                    → 2606:50c0:8000::153, 2606:50c0:8003::153
+  ✓ MX       @                    → 0 mail.example.com
+
+PULL ZONE HOSTNAMES:
+  ✓ cdn.example.com
+      CNAME: my-cdn.b-cdn.net
+      SSL:   ok (200)
+```
+
 ## Workflow: Migrating to Bunny DNS
 
 1. **Create config** with your current DNS records
