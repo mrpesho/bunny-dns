@@ -204,6 +204,31 @@ Bunny.net nameservers:
 - **Rate limit handling** - Auto-retry with exponential backoff
 - **Explicit domain flag** - `--domain` ensures you only sync what you intend
 
+## Testing
+
+The project includes a comprehensive test suite with 99% code coverage.
+
+```bash
+# Run all tests
+./venv/bin/pytest tests/ -v
+
+# Run with coverage report
+./venv/bin/pytest tests/ --cov=bunny_client --cov=dns_manager --cov=pullzone_manager --cov=edge_rules_manager --cov=sync --cov-report=term-missing
+
+# Run specific test file
+./venv/bin/pytest tests/test_dns_manager.py -v
+```
+
+### Test Structure
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `test_bunny_client.py` | HTTP client, retries, exceptions | 100% |
+| `test_dns_manager.py` | DNS records, normalization, sync | 100% |
+| `test_pullzone_manager.py` | Pull zones, hostnames, regions | 99% |
+| `test_edge_rules_manager.py` | Edge rules, action/trigger parsing | 100% |
+| `test_sync.py` | Orchestrator, config loading | 99% |
+
 ## Use Case: Fathom Analytics Proxy
 
 A common use case is proxying [Fathom Analytics](https://usefathom.com) through Bunny CDN to bypass ad blockers:
