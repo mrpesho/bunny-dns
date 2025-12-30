@@ -504,3 +504,45 @@ class TestPullZoneManagerSyncZone:
         assert "new.example.com" in result["hostnames_added"]
         # Error was logged in changes
         assert any("Warning" in c for c in result["changes"])
+
+    def test_sync_retries_certificate_for_existing_hostname(self, pz_manager, sample_pullzone_response):
+        """Test that sync retries loading certificate for existing hostnames without one."""
+        existing_zone = PullZone.from_api_response(sample_pullzone_response)
+        # Mark cdn.example.com as not having a certificate
+        for h in existing_zone.hostnames:
+            if h.value == "cdn.example.com":
+                h.has_certificate = False
+        pz_manager.get_zone_by_name = Mock(return_value=existing_zone)
+        pz_manager.load_free_certificate = Mock()
+
+        result = pz_manager.sync_zone(
+            name="my-cdn",
+            config={
+                "hostnames": ["cdn.example.com"],
+                "enabled_regions": ["EU", "US", "ASIA"],
+            },
+        )
+
+        # Should attempt to load certificate for existing hostname
+        pz_manager.load_free_certificate.assert_called_once_with("cdn.example.com")
+        assert "cdn.example.com" in result["certificates_loaded"]
+        assert any("Loading certificate" in c for c in result["changes"])
+
+    def test_sync_skips_certificate_if_already_present(self, pz_manager, sample_pullzone_response):
+        """Test that sync doesn't retry certificate for hostnames that already have one."""
+        existing_zone = PullZone.from_api_response(sample_pullzone_response)
+        # cdn.example.com already has certificate in fixture
+        pz_manager.get_zone_by_name = Mock(return_value=existing_zone)
+        pz_manager.load_free_certificate = Mock()
+
+        result = pz_manager.sync_zone(
+            name="my-cdn",
+            config={
+                "hostnames": ["cdn.example.com"],
+                "enabled_regions": ["EU", "US", "ASIA"],
+            },
+        )
+
+        # Should not attempt to load certificate
+        pz_manager.load_free_certificate.assert_not_called()
+        assert len(result["certificates_loaded"]) == 0

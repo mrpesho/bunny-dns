@@ -189,12 +189,13 @@ PULL ZONE HOSTNAMES:
 1. **Create config** with your current DNS records
 2. **Run with dry-run** to verify: `python main.py -c config.json --domain example.com --dry-run`
 3. **Apply changes**: `python main.py -c config.json --domain example.com`
-4. **Update nameservers** at your registrar to bunny.net's nameservers
-5. **Re-run sync** to load SSL certificates (requires DNS propagation)
-
-Bunny.net nameservers:
-- `kiki.bunny.net`
-- `coco.bunny.net`
+   - Pull zone hostnames are added, but SSL certificates will fail (DNS not pointing to bunny yet)
+4. **Update nameservers** at your registrar to [bunny.net's nameservers](https://docs.bunny.net/docs/dns-getting-started):
+   - `kiki.bunny.net`
+   - `coco.bunny.net`
+5. **Check propagation**: `python check_propagation.py example.com -c config.json`
+6. **Re-run sync** to load SSL certificates: `python main.py -c config.json --domain example.com`
+   - The script automatically detects hostnames missing certificates and loads them
 
 ## Safety Features
 

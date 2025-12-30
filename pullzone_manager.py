@@ -284,6 +284,20 @@ class PullZoneManager:
                     except Exception as e:
                         result["changes"].append(f"Warning: Could not load certificate for {hostname}: {e}")
 
+        # Retry loading certificates for existing hostnames that don't have one
+        for hostname in desired_hostnames:
+            hostname_lower = hostname.lower()
+            if hostname_lower in current_hostnames:
+                hostname_obj = current_hostnames[hostname_lower]
+                if not hostname_obj.has_certificate:
+                    result["changes"].append(f"Loading certificate for {hostname}")
+                    if not dry_run:
+                        try:
+                            self.load_free_certificate(hostname)
+                            result["certificates_loaded"].append(hostname)
+                        except Exception as e:
+                            result["changes"].append(f"Warning: Could not load certificate for {hostname}: {e}")
+
         # Remove extra hostnames
         for hostname_lower, hostname_obj in current_hostnames.items():
             if hostname_lower not in desired_hostnames_lower:
