@@ -260,3 +260,9 @@ Then use `fa.example.com` as your Fathom custom domain.
 ## License
 
 MIT
+
+---
+
+## Support
+
+If you're new to bunny.net and find this tool useful, consider signing up through my [affiliate link](https://bunny.net?ref=cklqznj7qp). It helps support continued development at no extra cost to you.
