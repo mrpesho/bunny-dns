@@ -1,0 +1,144 @@
+{
+  "domains": {
+    "example.com": {
+      "dns_records": [
+        {
+          "type": "A",
+          "name": "@",
+          "value": "93.184.216.34",
+          "ttl": 300
+        },
+        {
+          "type": "A",
+          "name": "www",
+          "value": "93.184.216.34",
+          "ttl": 300
+        },
+        {
+          "type": "AAAA",
+          "name": "@",
+          "value": "2606:2800:220:1:248:1893:25c8:1946",
+          "ttl": 300
+        },
+        {
+          "type": "CNAME",
+          "name": "cdn",
+          "value": "example-cdn.b-cdn.net",
+          "ttl": 300
+        },
+        {
+          "type": "TXT",
+          "name": "@",
+          "value": "v=spf1 include:_spf.google.com ~all",
+          "ttl": 300
+        },
+        {
+          "type": "MX",
+          "name": "@",
+          "value": "aspmx.l.google.com",
+          "priority": 1,
+          "ttl": 300
+        },
+        {
+          "type": "MX",
+          "name": "@",
+          "value": "alt1.aspmx.l.google.com",
+          "priority": 5,
+          "ttl": 300
+        },
+        {
+          "type": "SRV",
+          "name": "_sip._tcp",
+          "value": "sipserver.example.com",
+          "priority": 10,
+          "weight": 60,
+          "port": 5060,
+          "ttl": 300
+        }
+      ],
+      "pull_zones": {
+        "example-cdn": {
+          "origin_url": "https://origin.example.com",
+          "origin_host_header": "origin.example.com",
+          "type": "standard",
+          "enabled_regions": ["EU", "US", "ASIA"],
+          "hostnames": [
+            "cdn.example.com",
+            "static.example.com"
+          ],
+          "edge_rules": [
+            {
+              "description": "CORS Headers for all requests",
+              "enabled": true,
+              "trigger_match": "any",
+              "triggers": [
+                {
+                  "type": "url",
+                  "match": "any",
+                  "patterns": ["*"]
+                }
+              ],
+              "actions": [
+                {
+                  "type": "set_response_header",
+                  "header": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "type": "set_response_header",
+                  "header": "Access-Control-Allow-Methods",
+                  "value": "GET, HEAD, OPTIONS"
+                }
+              ]
+            },
+            {
+              "description": "Cache static assets for 1 day",
+              "enabled": true,
+              "trigger_match": "any",
+              "triggers": [
+                {
+                  "type": "url_extension",
+                  "match": "any",
+                  "patterns": ["js", "css", "png", "jpg", "webp", "woff2"]
+                }
+              ],
+              "actions": [
+                {
+                  "type": "override_cache_time",
+                  "seconds": 86400
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "another-domain.com": {
+      "dns_records": [
+        {
+          "type": "A",
+          "name": "@",
+          "value": "10.0.0.1",
+          "ttl": 300
+        },
+        {
+          "type": "CNAME",
+          "name": "www",
+          "value": "another-domain.com",
+          "ttl": 300
+        }
+      ],
+      "pull_zones": {
+        "another-cdn": {
+          "origin_url": "https://origin.another-domain.com",
+          "type": "standard",
+          "enabled_regions": ["EU", "US"],
+          "hostnames": [
+            "cdn.another-domain.com"
+          ],
+          "edge_rules": []
+        }
+      }
+    }
+  }
+}
