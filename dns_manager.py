@@ -2,6 +2,7 @@
 DNS Zone and Record management for bunny.net.
 """
 
+import ipaddress
 from dataclasses import dataclass
 from typing import Optional
 
@@ -75,12 +76,21 @@ class DNSRecord:
         n = name.lower().strip()
         return "" if n == "@" else n
 
+    def _normalize_value(self, value: str, record_type: str) -> str:
+        """Normalize record value - expand IPv6 addresses to allow comparison."""
+        if record_type.upper() == "AAAA":
+            try:
+                return str(ipaddress.IPv6Address(value))
+            except ValueError:
+                pass
+        return value
+
     def matches(self, other: "DNSRecord") -> bool:
         """Check if two records match (same type, name, value)."""
         return (
             self.type.upper() == other.type.upper()
             and self._normalize_name(self.name) == self._normalize_name(other.name)
-            and self.value == other.value
+            and self._normalize_value(self.value, self.type) == self._normalize_value(other.value, other.type)
         )
 
     def _normalize_optional(self, val) -> int:

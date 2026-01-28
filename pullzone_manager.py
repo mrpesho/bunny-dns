@@ -186,6 +186,7 @@ class PullZoneManager:
         origin_host_header = config.get("origin_host_header")
         zone_type = PULLZONE_TYPES.get(config.get("type", "standard"), 0)
         desired_hostnames = set(config.get("hostnames", []))
+        force_ssl = config.get("force_ssl", None)
 
         # Parse enabled regions
         regions = config.get("enabled_regions", ["EU", "US", "ASIA", "SA", "AF"])
@@ -283,6 +284,14 @@ class PullZoneManager:
                         result["certificates_loaded"].append(hostname)
                     except Exception as e:
                         result["changes"].append(f"Warning: Could not load certificate for {hostname}: {e}")
+                    # Set Force SSL if configured
+                    if force_ssl is not None:
+                        try:
+                            self.set_force_ssl(zone.id, hostname, force=force_ssl)
+                            state = "Enabled" if force_ssl else "Disabled"
+                            result["changes"].append(f"{state} Force SSL for {hostname}")
+                        except Exception as e:
+                            result["changes"].append(f"Warning: Could not set Force SSL for {hostname}: {e}")
 
         # Retry loading certificates for existing hostnames that don't have one
         for hostname in desired_hostnames:
@@ -297,6 +306,21 @@ class PullZoneManager:
                             result["certificates_loaded"].append(hostname)
                         except Exception as e:
                             result["changes"].append(f"Warning: Could not load certificate for {hostname}: {e}")
+
+        # Set Force SSL for existing hostnames where state doesn't match
+        if force_ssl is not None:
+            for hostname in desired_hostnames:
+                hostname_lower = hostname.lower()
+                if hostname_lower in current_hostnames:
+                    hostname_obj = current_hostnames[hostname_lower]
+                    if hostname_obj.force_ssl != force_ssl:
+                        state = "Enabling" if force_ssl else "Disabling"
+                        result["changes"].append(f"{state} Force SSL for {hostname}")
+                        if not dry_run:
+                            try:
+                                self.set_force_ssl(zone.id, hostname, force=force_ssl)
+                            except Exception as e:
+                                result["changes"].append(f"Warning: Could not set Force SSL for {hostname}: {e}")
 
         # Remove extra hostnames
         for hostname_lower, hostname_obj in current_hostnames.items():
