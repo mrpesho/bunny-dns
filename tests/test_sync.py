@@ -9,14 +9,14 @@ from unittest.mock import Mock, MagicMock, patch
 
 import pytest
 
-from sync import BunnySync, print_results
+from bunny_dns.sync import BunnySync, print_results
 
 
 class TestBunnySyncInit:
     """Test BunnySync initialization."""
 
     def test_init_creates_managers(self):
-        with patch("sync.BunnyClient") as mock_client_class:
+        with patch("bunny_dns.sync.BunnyClient") as mock_client_class:
             sync = BunnySync("test-api-key")
 
             mock_client_class.assert_called_once_with("test-api-key")
@@ -30,7 +30,7 @@ class TestLoadConfig:
 
     @pytest.fixture
     def bunny_sync(self):
-        with patch("sync.BunnyClient"):
+        with patch("bunny_dns.sync.BunnyClient"):
             return BunnySync("test-api-key")
 
     def test_load_config_from_dict(self, bunny_sync, sample_config):
@@ -78,7 +78,7 @@ class TestFilterDomains:
 
     @pytest.fixture
     def bunny_sync(self):
-        with patch("sync.BunnyClient"):
+        with patch("bunny_dns.sync.BunnyClient"):
             return BunnySync("test-api-key")
 
     def test_filter_no_filter_returns_all(self, bunny_sync):
@@ -118,7 +118,7 @@ class TestSync:
 
     @pytest.fixture
     def bunny_sync(self):
-        with patch("sync.BunnyClient"):
+        with patch("bunny_dns.sync.BunnyClient"):
             sync = BunnySync("test-api-key")
             sync.dns_manager = MagicMock()
             sync.pullzone_manager = MagicMock()
@@ -331,7 +331,7 @@ class TestSyncDNSOnly:
 
     @pytest.fixture
     def bunny_sync(self):
-        with patch("sync.BunnyClient"):
+        with patch("bunny_dns.sync.BunnyClient"):
             sync = BunnySync("test-api-key")
             sync.dns_manager = MagicMock()
             sync.pullzone_manager = MagicMock()
@@ -376,7 +376,7 @@ class TestSyncPullzonesOnly:
 
     @pytest.fixture
     def bunny_sync(self):
-        with patch("sync.BunnyClient"):
+        with patch("bunny_dns.sync.BunnyClient"):
             sync = BunnySync("test-api-key")
             sync.dns_manager = MagicMock()
             sync.pullzone_manager = MagicMock()
@@ -506,7 +506,7 @@ class TestIntegration:
 
     @pytest.fixture
     def bunny_sync(self):
-        with patch("sync.BunnyClient"):
+        with patch("bunny_dns.sync.BunnyClient"):
             sync = BunnySync("test-api-key")
             sync.dns_manager = MagicMock()
             sync.pullzone_manager = MagicMock()

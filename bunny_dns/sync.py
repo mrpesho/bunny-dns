@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from bunny_client import BunnyClient
-from dns_manager import DNSManager
-from pullzone_manager import PullZoneManager
-from edge_rules_manager import EdgeRulesManager
+from .bunny_client import BunnyClient
+from .dns_manager import DNSManager
+from .pullzone_manager import PullZoneManager
+from .edge_rules_manager import EdgeRulesManager
 
 
 class BunnySync:

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from sync import BunnySync, print_results
+from .sync import BunnySync, print_results
 
 
 def main():

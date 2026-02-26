@@ -6,7 +6,7 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Optional
 
-from bunny_client import BunnyClient, BunnyNotFoundError
+from .bunny_client import BunnyClient, BunnyNotFoundError
 
 
 # DNS Record type mapping

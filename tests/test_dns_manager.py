@@ -6,7 +6,7 @@ from unittest.mock import Mock, MagicMock, patch
 
 import pytest
 
-from dns_manager import (
+from bunny_dns.dns_manager import (
     DNS_RECORD_TYPES,
     DNS_RECORD_TYPES_REVERSE,
     DNSRecord,

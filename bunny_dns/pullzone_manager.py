@@ -5,7 +5,7 @@ Pull Zone management for bunny.net.
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from bunny_client import BunnyClient, BunnyNotFoundError
+from .bunny_client import BunnyClient, BunnyNotFoundError
 
 
 # Pull Zone type mapping

@@ -6,7 +6,7 @@ from unittest.mock import Mock, MagicMock
 
 import pytest
 
-from pullzone_manager import (
+from bunny_dns.pullzone_manager import (
     PULLZONE_TYPES,
     Hostname,
     PullZone,

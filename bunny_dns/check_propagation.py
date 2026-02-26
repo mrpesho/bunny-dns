@@ -40,7 +40,7 @@ def check_https(hostname: str) -> dict:
         req = Request(
             f"https://{hostname}",
             method="HEAD",
-            headers={"User-Agent": "bunny-dns-sync/1.0"}
+            headers={"User-Agent": "bunny-dns/1.0"}
         )
         with urlopen(req, timeout=10, context=ctx) as response:
             return {"status": "ok", "code": response.status}

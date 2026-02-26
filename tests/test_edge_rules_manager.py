@@ -6,7 +6,7 @@ from unittest.mock import Mock, MagicMock
 
 import pytest
 
-from edge_rules_manager import (
+from bunny_dns.edge_rules_manager import (
     ACTION_TYPES,
     ACTION_TYPES_REVERSE,
     TRIGGER_TYPES,

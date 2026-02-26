@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from bunny_client import (
+from bunny_dns.bunny_client import (
     BunnyClient,
     BunnyAPIError,
     BunnyAuthError,

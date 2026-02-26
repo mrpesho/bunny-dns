@@ -30,6 +30,11 @@ Thumbs.db
 # Logs
 *.log
 
+# Packaging
+dist/
+build/
+*.egg-info/
+
 # Coverage
 .coverage
 htmlcov/

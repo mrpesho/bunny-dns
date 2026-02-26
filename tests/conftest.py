@@ -1,17 +1,12 @@
 """
-Shared fixtures for bunny-dns-sync tests.
+Shared fixtures for bunny-dns tests.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
 
-# Add parent directory to path so we can import the modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from bunny_client import BunnyClient
+from bunny_dns.bunny_client import BunnyClient
 
 
 @pytest.fixture

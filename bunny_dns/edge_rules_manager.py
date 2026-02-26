@@ -5,7 +5,7 @@ Edge Rules management for bunny.net Pull Zones.
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from bunny_client import BunnyClient
+from .bunny_client import BunnyClient
 
 
 # Edge Rule Action Types
