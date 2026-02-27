@@ -15,16 +15,21 @@ A Python CLI tool for declaratively managing DNS zones, Pull Zones, and Edge Rul
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/mrpesho/autoset_bunny_dns.git
-cd autoset_bunny_dns
+pip install bunny-dns
+```
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+Or with [uv](https://docs.astral.sh/uv/):
 
-# Install dependencies
-pip install -r requirements.txt
+```bash
+uv pip install bunny-dns
+```
+
+For development:
+
+```bash
+git clone https://github.com/mrpesho/bunny-dns.git
+cd bunny-dns
+pip install -e ".[dev]"
 ```
 
 ## Configuration
@@ -124,22 +129,22 @@ BUNNY_API_KEY=your-api-key-here
 
 ```bash
 # Sync a specific domain (recommended)
-python main.py -c config.json --domain example.com
+bunny-dns -c config.json --domain example.com
 
 # Dry run - preview changes without applying
-python main.py -c config.json --domain example.com --dry-run
+bunny-dns -c config.json --domain example.com --dry-run
 
 # DNS only
-python main.py -c config.json --domain example.com --dns-only
+bunny-dns -c config.json --domain example.com --dns-only
 
 # Pull zones only
-python main.py -c config.json --domain example.com --pullzones-only
+bunny-dns -c config.json --domain example.com --pullzones-only
 
 # Additive mode - don't delete records not in config
-python main.py -c config.json --domain example.com --no-delete
+bunny-dns -c config.json --domain example.com --no-delete
 
 # Sync all domains in config
-python main.py -c config.json
+bunny-dns -c config.json
 ```
 
 ### CLI Options
@@ -160,10 +165,10 @@ After updating nameservers, check if DNS has propagated:
 
 ```bash
 # Basic check
-python check_propagation.py example.com
+bunny-dns-check example.com
 
 # Include pull zone hostname/SSL checks
-python check_propagation.py example.com -c config.json
+bunny-dns-check example.com -c config.json
 ```
 
 Output:
@@ -187,14 +192,14 @@ PULL ZONE HOSTNAMES:
 ## Workflow: Migrating to Bunny DNS
 
 1. **Create config** with your current DNS records
-2. **Run with dry-run** to verify: `python main.py -c config.json --domain example.com --dry-run`
-3. **Apply changes**: `python main.py -c config.json --domain example.com`
+2. **Run with dry-run** to verify: `bunny-dns -c config.json --domain example.com --dry-run`
+3. **Apply changes**: `bunny-dns -c config.json --domain example.com`
    - Pull zone hostnames are added, but SSL certificates will fail (DNS not pointing to bunny yet)
 4. **Update nameservers** at your registrar to [bunny.net's nameservers](https://docs.bunny.net/docs/dns-getting-started):
    - `kiki.bunny.net`
    - `coco.bunny.net`
-5. **Check propagation**: `python check_propagation.py example.com -c config.json`
-6. **Re-run sync** to load SSL certificates: `python main.py -c config.json --domain example.com`
+5. **Check propagation**: `bunny-dns-check example.com -c config.json`
+6. **Re-run sync** to load SSL certificates: `bunny-dns -c config.json --domain example.com`
    - The script automatically detects hostnames missing certificates and loads them
 
 ## Safety Features
@@ -211,13 +216,13 @@ The project includes a comprehensive test suite with 99% code coverage.
 
 ```bash
 # Run all tests
-./venv/bin/pytest tests/ -v
+pytest tests/ -v
 
 # Run with coverage report
-./venv/bin/pytest tests/ --cov=bunny_client --cov=dns_manager --cov=pullzone_manager --cov=edge_rules_manager --cov=sync --cov-report=term-missing
+pytest tests/ --cov=bunny_dns --cov-report=term-missing
 
 # Run specific test file
-./venv/bin/pytest tests/test_dns_manager.py -v
+pytest tests/test_dns_manager.py -v
 ```
 
 ### Test Structure

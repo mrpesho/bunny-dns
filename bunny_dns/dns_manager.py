@@ -40,6 +40,23 @@ class DNSRecord:
     port: Optional[int] = None      # For SRV
     id: Optional[int] = None        # Set when fetched from API
 
+    def to_config_dict(self) -> dict:
+        """Convert to config format (inverse of from_api_response)."""
+        name = "@" if self.name == "" else self.name
+        d = {
+            "type": self.type.upper(),
+            "name": name,
+            "value": self.value,
+            "ttl": self.ttl,
+        }
+        if self.priority is not None and self.priority != 0:
+            d["priority"] = self.priority
+        if self.weight is not None and self.weight != 0:
+            d["weight"] = self.weight
+        if self.port is not None and self.port != 0:
+            d["port"] = self.port
+        return d
+
     def to_api_payload(self) -> dict:
         """Convert to API request payload."""
         payload = {
@@ -184,6 +201,30 @@ class DNSManager:
     def delete_record(self, zone_id: int, record_id: int) -> None:
         """Delete a DNS record."""
         self.client.delete(f"/dnszone/{zone_id}/records/{record_id}")
+
+    def export_zone(self, domain: str) -> Optional[list[dict]]:
+        """Export DNS records for a zone as config dicts.
+
+        Returns:
+            List of record config dicts, or None if zone not found.
+        """
+        zone = self.get_zone_by_domain(domain)
+        if zone is None:
+            return None
+        return [r.to_config_dict() for r in zone.records]
+
+    def export_all_zones(self) -> dict[str, list[dict]]:
+        """Export all DNS zones as {domain: [records]}.
+
+        Returns:
+            Dict mapping domain names to lists of record config dicts.
+        """
+        result = {}
+        zones = self.list_zones()
+        for zone_summary in zones:
+            zone = self.get_zone(zone_summary.id)
+            result[zone.domain] = [r.to_config_dict() for r in zone.records]
+        return result
 
     def sync_zone(
         self,

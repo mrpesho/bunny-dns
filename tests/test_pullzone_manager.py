@@ -8,6 +8,7 @@ import pytest
 
 from bunny_dns.pullzone_manager import (
     PULLZONE_TYPES,
+    PULLZONE_TYPES_REVERSE,
     Hostname,
     PullZone,
     PullZoneManager,
@@ -546,3 +547,137 @@ class TestPullZoneManagerSyncZone:
         # Should not attempt to load certificate
         pz_manager.load_free_certificate.assert_not_called()
         assert len(result["certificates_loaded"]) == 0
+
+
+class TestPullZoneTypesReverse:
+    """Test reverse type mapping."""
+
+    def test_reverse_mapping(self):
+        assert PULLZONE_TYPES_REVERSE[0] == "standard"
+        assert PULLZONE_TYPES_REVERSE[1] == "volume"
+
+
+class TestPullZoneToConfigDict:
+    """Test PullZone.to_config_dict() for export."""
+
+    def test_basic_config(self, sample_pullzone_response):
+        zone = PullZone.from_api_response(sample_pullzone_response)
+        d = zone.to_config_dict()
+
+        assert d["origin_url"] == "https://origin.example.com"
+        assert d["origin_host_header"] == "origin.example.com"
+        assert d["type"] == "standard"
+        assert d["edge_rules"] == []
+
+    def test_regions(self, sample_pullzone_response):
+        zone = PullZone.from_api_response(sample_pullzone_response)
+        d = zone.to_config_dict()
+
+        # Fixture has EU, US, ASIA enabled; SA, AF disabled
+        assert "EU" in d["enabled_regions"]
+        assert "US" in d["enabled_regions"]
+        assert "ASIA" in d["enabled_regions"]
+        assert "SA" not in d["enabled_regions"]
+        assert "AF" not in d["enabled_regions"]
+
+    def test_filters_system_hostnames(self, sample_pullzone_response):
+        zone = PullZone.from_api_response(sample_pullzone_response)
+        d = zone.to_config_dict()
+
+        # Should only include cdn.example.com, not the b-cdn.net system hostname
+        assert d["hostnames"] == ["cdn.example.com"]
+
+    def test_volume_type(self):
+        zone = PullZone(name="my-cdn", type=1)
+        d = zone.to_config_dict()
+        assert d["type"] == "volume"
+
+    def test_no_hostnames(self):
+        zone = PullZone(name="my-cdn", hostnames=[])
+        d = zone.to_config_dict()
+        assert d["hostnames"] == []
+
+    def test_none_origin_fields(self):
+        zone = PullZone(name="my-cdn")
+        d = zone.to_config_dict()
+        assert d["origin_url"] == ""
+        assert d["origin_host_header"] == ""
+
+
+class TestPullZoneManagerGetZonesForDomain:
+    """Test get_zones_for_domain discovery method."""
+
+    @pytest.fixture
+    def pz_manager(self, mock_client):
+        return PullZoneManager(mock_client)
+
+    def test_matches_exact_domain(self, pz_manager):
+        pz_manager.client.get = Mock(return_value=[
+            {
+                "Id": 1, "Name": "zone1",
+                "Hostnames": [
+                    {"Id": 1, "Value": "example.com", "IsSystemHostname": False,
+                     "ForceSSL": True, "HasCertificate": True},
+                ],
+            },
+        ])
+
+        zones = pz_manager.get_zones_for_domain("example.com")
+        assert len(zones) == 1
+        assert zones[0].name == "zone1"
+
+    def test_matches_subdomain(self, pz_manager):
+        pz_manager.client.get = Mock(return_value=[
+            {
+                "Id": 1, "Name": "zone1",
+                "Hostnames": [
+                    {"Id": 1, "Value": "cdn.example.com", "IsSystemHostname": False,
+                     "ForceSSL": True, "HasCertificate": True},
+                ],
+            },
+        ])
+
+        zones = pz_manager.get_zones_for_domain("example.com")
+        assert len(zones) == 1
+
+    def test_ignores_system_hostnames(self, pz_manager):
+        pz_manager.client.get = Mock(return_value=[
+            {
+                "Id": 1, "Name": "zone1",
+                "Hostnames": [
+                    {"Id": 1, "Value": "zone1.b-cdn.net", "IsSystemHostname": True,
+                     "ForceSSL": True, "HasCertificate": True},
+                ],
+            },
+        ])
+
+        zones = pz_manager.get_zones_for_domain("b-cdn.net")
+        assert len(zones) == 0
+
+    def test_no_match(self, pz_manager):
+        pz_manager.client.get = Mock(return_value=[
+            {
+                "Id": 1, "Name": "zone1",
+                "Hostnames": [
+                    {"Id": 1, "Value": "cdn.other.com", "IsSystemHostname": False,
+                     "ForceSSL": True, "HasCertificate": True},
+                ],
+            },
+        ])
+
+        zones = pz_manager.get_zones_for_domain("example.com")
+        assert len(zones) == 0
+
+    def test_case_insensitive(self, pz_manager):
+        pz_manager.client.get = Mock(return_value=[
+            {
+                "Id": 1, "Name": "zone1",
+                "Hostnames": [
+                    {"Id": 1, "Value": "CDN.EXAMPLE.COM", "IsSystemHostname": False,
+                     "ForceSSL": True, "HasCertificate": True},
+                ],
+            },
+        ])
+
+        zones = pz_manager.get_zones_for_domain("example.com")
+        assert len(zones) == 1

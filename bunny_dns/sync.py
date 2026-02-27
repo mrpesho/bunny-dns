@@ -180,6 +180,126 @@ class BunnySync:
 
         return results
 
+    def pull(
+        self,
+        domain: Optional[str] = None,
+        pull_all: bool = False,
+        dns_only: bool = False,
+        pullzones_only: bool = False,
+    ) -> dict:
+        """Pull current state from bunny.net and return as config dict.
+
+        Args:
+            domain: Pull a specific domain
+            pull_all: Pull all DNS zones on the account
+            dns_only: Only pull DNS records
+            pullzones_only: Only pull Pull Zones
+
+        Returns:
+            Config dict matching the standard config format
+        """
+        if pull_all:
+            return self._pull_all_domains(
+                dns_only=dns_only, pullzones_only=pullzones_only
+            )
+        elif domain:
+            return self._pull_domain(
+                domain, dns_only=dns_only, pullzones_only=pullzones_only
+            )
+        else:
+            raise ValueError("--sot bunny requires either --domain or --all")
+
+    def _pull_domain(
+        self,
+        domain: str,
+        dns_only: bool = False,
+        pullzones_only: bool = False,
+    ) -> Optional[dict]:
+        """Pull config for a single domain.
+
+        Returns:
+            Config dict, or None if the domain was not found on the account.
+        """
+        domain_config = {}
+        zone_found = True
+
+        if not pullzones_only:
+            records = self.dns_manager.export_zone(domain)
+            if records is None:
+                zone_found = False
+                records = []
+            domain_config["dns_records"] = records
+
+        if not dns_only:
+            pull_zones = {}
+            pz_list = self.pullzone_manager.get_zones_for_domain(domain)
+            for pz in pz_list:
+                pz_config = pz.to_config_dict()
+                pz_config["edge_rules"] = self.edge_rules_manager.export_rules(pz.id)
+                pull_zones[pz.name] = pz_config
+            domain_config["pull_zones"] = pull_zones
+
+        # If DNS zone wasn't found and no pull zones matched, domain doesn't exist
+        if not zone_found and not domain_config.get("pull_zones"):
+            return None
+
+        return {"domains": {domain: domain_config}}
+
+    def _pull_all_domains(
+        self,
+        dns_only: bool = False,
+        pullzones_only: bool = False,
+    ) -> dict:
+        """Pull config for all domains on the account."""
+        domains = {}
+
+        # Get all DNS zones
+        if not pullzones_only:
+            all_dns = self.dns_manager.export_all_zones()
+            for domain_name, records in all_dns.items():
+                domains.setdefault(domain_name, {})["dns_records"] = records
+
+        # Get all Pull Zones and associate to domains
+        if not dns_only:
+            all_pz = self.pullzone_manager.list_zones()
+            dns_domains = list(domains.keys()) if domains else [
+                z.domain for z in self.dns_manager.list_zones()
+            ]
+
+            for pz in all_pz:
+                pz_config = pz.to_config_dict()
+                pz_config["edge_rules"] = self.edge_rules_manager.export_rules(pz.id)
+
+                # Find matching domain by hostname
+                matched_domain = None
+                for h in pz.hostnames:
+                    if h.is_system_hostname:
+                        continue
+                    h_lower = h.value.lower()
+                    for d in dns_domains:
+                        d_lower = d.lower()
+                        if h_lower == d_lower or h_lower.endswith("." + d_lower):
+                            matched_domain = d
+                            break
+                    if matched_domain:
+                        break
+
+                if matched_domain:
+                    domains.setdefault(matched_domain, {})
+                    domains[matched_domain].setdefault("pull_zones", {})[pz.name] = pz_config
+                else:
+                    import sys
+                    print(
+                        f"Warning: Pull zone '{pz.name}' could not be matched to any domain",
+                        file=sys.stderr,
+                    )
+
+            # Ensure all domains have pull_zones key
+            for d in domains:
+                domains[d].setdefault("pull_zones", {})
+
+        return {"domains": domains}
+
     def sync_pullzones_only(
         self,
         config: Union[dict, str, Path],

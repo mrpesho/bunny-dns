@@ -7,9 +7,12 @@ Usage:
     python main.py --config config.json --domain example.com --dry-run
     python main.py --config config.json --domain example.com --dns-only
     python main.py --config config.json  # syncs all domains in config
+    python main.py --sot bunny --domain example.com  # pull from bunny.net
+    python main.py --sot bunny --all  # pull all zones from bunny.net
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -26,8 +29,7 @@ def main():
     )
     parser.add_argument(
         "--config", "-c",
-        required=True,
-        help="Path to JSON configuration file",
+        help="Path to JSON configuration file (required for --sot local)",
     )
     parser.add_argument(
         "--domain", "-d",
@@ -57,6 +59,22 @@ def main():
         "--api-key",
         help="bunny.net API key (defaults to BUNNY_API_KEY env var)",
     )
+    parser.add_argument(
+        "--sot",
+        choices=["local", "bunny"],
+        default="local",
+        help="Source of truth: 'local' pushes config to bunny.net (default), 'bunny' pulls current state",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="pull_all",
+        help="With --sot bunny: pull all DNS zones on the account",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="With --sot bunny: write output to file instead of stdout",
+    )
 
     args = parser.parse_args()
 
@@ -66,47 +84,83 @@ def main():
         print("Error: API key required. Set BUNNY_API_KEY env var or use --api-key", file=sys.stderr)
         sys.exit(1)
 
-    # Validate config file exists
-    if not os.path.exists(args.config):
-        print(f"Error: Config file not found: {args.config}", file=sys.stderr)
-        sys.exit(1)
+    if args.sot == "bunny":
+        # Pull mode
+        if not args.domain and not args.pull_all:
+            print("Error: --sot bunny requires either --domain or --all", file=sys.stderr)
+            sys.exit(1)
 
-    try:
-        syncer = BunnySync(api_key)
-
-        if args.dns_only:
-            results = syncer.sync_dns_only(
-                config=args.config,
-                dry_run=args.dry_run,
-                delete_extra_records=not args.no_delete,
+        try:
+            syncer = BunnySync(api_key)
+            config = syncer.pull(
                 domain=args.domain,
+                pull_all=args.pull_all,
+                dns_only=args.dns_only,
+                pullzones_only=args.pullzones_only,
             )
-        elif args.pullzones_only:
-            results = syncer.sync_pullzones_only(
-                config=args.config,
-                dry_run=args.dry_run,
-                domain=args.domain,
-            )
-        else:
-            results = syncer.sync(
-                config=args.config,
-                dry_run=args.dry_run,
-                delete_extra_records=not args.no_delete,
-                domain=args.domain,
-            )
+            if config is None:
+                print(
+                    f"Error: Domain '{args.domain}' not found on your account. "
+                    f"Check if you typed the domain correctly.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            output = json.dumps(config, indent=2)
+            if args.output:
+                with open(args.output, "w") as f:
+                    f.write(output + "\n")
+                print(f"Config written to {args.output}", file=sys.stderr)
+            else:
+                print(output)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Push mode (existing behavior)
+        if not args.config:
+            print("Error: --config is required for --sot local", file=sys.stderr)
+            sys.exit(1)
 
-        print_results(results)
+        if not os.path.exists(args.config):
+            print(f"Error: Config file not found: {args.config}", file=sys.stderr)
+            sys.exit(1)
 
-        # Exit with error if nothing was synced (possible config issue)
-        if not results.get("dns_zones") and not results.get("pull_zones"):
-            print("\nWarning: No resources found in config to sync.", file=sys.stderr)
+        try:
+            syncer = BunnySync(api_key)
 
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+            if args.dns_only:
+                results = syncer.sync_dns_only(
+                    config=args.config,
+                    dry_run=args.dry_run,
+                    delete_extra_records=not args.no_delete,
+                    domain=args.domain,
+                )
+            elif args.pullzones_only:
+                results = syncer.sync_pullzones_only(
+                    config=args.config,
+                    dry_run=args.dry_run,
+                    domain=args.domain,
+                )
+            else:
+                results = syncer.sync(
+                    config=args.config,
+                    dry_run=args.dry_run,
+                    delete_extra_records=not args.no_delete,
+                    domain=args.domain,
+                )
+
+            print_results(results)
+
+            # Exit with error if nothing was synced (possible config issue)
+            if not results.get("dns_zones") and not results.get("pull_zones"):
+                print("\nWarning: No resources found in config to sync.", file=sys.stderr)
+
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

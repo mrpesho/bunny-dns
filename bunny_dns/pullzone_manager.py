@@ -14,6 +14,8 @@ PULLZONE_TYPES = {
     "volume": 1,
 }
 
+PULLZONE_TYPES_REVERSE = {v: k for k, v in PULLZONE_TYPES.items()}
+
 
 @dataclass
 class Hostname:
@@ -93,6 +95,34 @@ class PullZone:
             payload["OriginHostHeader"] = self.origin_host_header
         return payload
 
+    def to_config_dict(self) -> dict:
+        """Convert to config format for export."""
+        regions = []
+        if self.enable_geo_zone_eu:
+            regions.append("EU")
+        if self.enable_geo_zone_us:
+            regions.append("US")
+        if self.enable_geo_zone_asia:
+            regions.append("ASIA")
+        if self.enable_geo_zone_sa:
+            regions.append("SA")
+        if self.enable_geo_zone_af:
+            regions.append("AF")
+
+        custom_hostnames = [
+            h.value for h in self.hostnames if not h.is_system_hostname
+        ]
+
+        d = {
+            "origin_url": self.origin_url or "",
+            "origin_host_header": self.origin_host_header or "",
+            "type": PULLZONE_TYPES_REVERSE.get(self.type, "standard"),
+            "enabled_regions": regions,
+            "hostnames": custom_hostnames,
+            "edge_rules": [],
+        }
+        return d
+
 
 class PullZoneManager:
     """Manages Pull Zones on bunny.net."""
@@ -118,6 +148,25 @@ class PullZoneManager:
             if zone.name.lower() == name.lower():
                 return zone
         return None
+
+    def get_zones_for_domain(self, domain: str) -> list[PullZone]:
+        """Find all Pull Zones with a custom hostname matching the given domain.
+
+        A pull zone matches if any non-system hostname equals or is a subdomain
+        of the given domain.
+        """
+        domain_lower = domain.lower()
+        suffix = "." + domain_lower
+        matching = []
+        for zone in self.list_zones():
+            for h in zone.hostnames:
+                if h.is_system_hostname:
+                    continue
+                h_lower = h.value.lower()
+                if h_lower == domain_lower or h_lower.endswith(suffix):
+                    matching.append(zone)
+                    break
+        return matching
 
     def create_zone(self, zone: PullZone) -> PullZone:
         """Create a new Pull Zone."""

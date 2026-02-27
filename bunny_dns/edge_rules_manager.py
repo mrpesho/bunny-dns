@@ -62,6 +62,17 @@ class EdgeRuleTrigger:
     match: str = "any"  # any, all, none
     parameter: Optional[str] = None  # For header name, etc.
 
+    def to_config_dict(self) -> dict:
+        """Convert to config format (inverse of parse_trigger_from_config)."""
+        d = {
+            "type": self.type,
+            "patterns": list(self.patterns),
+            "match": self.match,
+        }
+        if self.parameter:
+            d["parameter"] = self.parameter
+        return d
+
     def to_api_payload(self) -> dict:
         payload = {
             "Type": TRIGGER_TYPES.get(self.type, 0),
@@ -94,6 +105,38 @@ class EdgeRuleAction:
     type: str
     parameter1: Optional[str] = None  # Header name, redirect URL, etc.
     parameter2: Optional[str] = None  # Header value, etc.
+
+    def to_config_dict(self) -> dict:
+        """Convert to config format (inverse of parse_action_from_config)."""
+        if self.type in ("set_response_header", "set_request_header"):
+            return {
+                "type": self.type,
+                "header": self.parameter1 or "",
+                "value": self.parameter2 or "",
+            }
+        elif self.type == "redirect":
+            return {
+                "type": self.type,
+                "url": self.parameter1 or "",
+                "status_code": self.parameter2 or "301",
+            }
+        elif self.type == "origin_url":
+            return {
+                "type": self.type,
+                "url": self.parameter1 or "",
+            }
+        elif self.type == "override_cache_time":
+            return {
+                "type": self.type,
+                "seconds": int(self.parameter1) if self.parameter1 else 0,
+            }
+        elif self.type == "set_status_code":
+            return {
+                "type": self.type,
+                "code": int(self.parameter1) if self.parameter1 else 200,
+            }
+        else:
+            return {"type": self.type}
 
     def to_api_payload(self) -> dict:
         payload = {
@@ -245,6 +288,47 @@ def parse_rule_from_config(rule_config: dict) -> list[EdgeRule]:
     return rules
 
 
+import re
+
+
+def group_api_rules_to_config(rules: list[EdgeRule]) -> list[dict]:
+    """Group API rules (1 action each) back into multi-action config rules.
+
+    Rules created from multi-action configs have descriptions like
+    "My Rule (action 1)", "My Rule (action 2)". This groups them back
+    by stripping the suffix and matching on base description + triggers + enabled.
+    """
+    # Build groups: key = (base_description, enabled, trigger_match, triggers_repr)
+    groups: dict[tuple, list[EdgeRule]] = {}
+    action_suffix_re = re.compile(r" \(action \d+\)$")
+
+    for rule in rules:
+        base_desc = action_suffix_re.sub("", rule.description)
+        triggers_key = tuple(
+            (t.type, tuple(t.patterns), t.match, t.parameter or "")
+            for t in rule.triggers
+        )
+        key = (base_desc, rule.enabled, rule.trigger_match, triggers_key)
+        groups.setdefault(key, []).append(rule)
+
+    result = []
+    for (base_desc, enabled, trigger_match, _), group_rules in groups.items():
+        actions = []
+        for r in group_rules:
+            for a in r.actions:
+                actions.append(a.to_config_dict())
+        triggers = [t.to_config_dict() for t in group_rules[0].triggers]
+        config_rule = {
+            "description": base_desc,
+            "enabled": enabled,
+            "trigger_match": trigger_match,
+            "triggers": triggers,
+            "actions": actions,
+        }
+        result.append(config_rule)
+    return result
+
+
 class EdgeRulesManager:
     """Manages Edge Rules on bunny.net Pull Zones."""
 
@@ -256,6 +340,11 @@ class EdgeRulesManager:
         response = self.client.get(f"/pullzone/{zone_id}")
         rules_data = response.get("EdgeRules", []) if response else []
         return [EdgeRule.from_api_response(r) for r in rules_data]
+
+    def export_rules(self, zone_id: int) -> list[dict]:
+        """Export edge rules for a Pull Zone as config dicts."""
+        rules = self.get_rules(zone_id)
+        return group_api_rules_to_config(rules)
 
     def add_or_update_rule(self, zone_id: int, rule: EdgeRule) -> dict:
         """Add or update an edge rule."""

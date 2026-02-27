@@ -18,6 +18,7 @@ from bunny_dns.edge_rules_manager import (
     parse_action_from_config,
     parse_trigger_from_config,
     parse_rule_from_config,
+    group_api_rules_to_config,
     EdgeRulesManager,
 )
 
@@ -602,3 +603,204 @@ class TestEdgeRulesManagerSyncRules:
         )
 
         assert any("Creating rule: Test rule" in c for c in result["changes"])
+
+
+class TestEdgeRuleActionToConfigDict:
+    """Test EdgeRuleAction.to_config_dict() for export."""
+
+    def test_block_action(self):
+        action = EdgeRuleAction(type="block")
+        d = action.to_config_dict()
+        assert d == {"type": "block"}
+
+    def test_force_ssl_action(self):
+        action = EdgeRuleAction(type="force_ssl")
+        d = action.to_config_dict()
+        assert d == {"type": "force_ssl"}
+
+    def test_set_response_header(self):
+        action = EdgeRuleAction(type="set_response_header", parameter1="X-Custom", parameter2="value")
+        d = action.to_config_dict()
+        assert d == {"type": "set_response_header", "header": "X-Custom", "value": "value"}
+
+    def test_set_request_header(self):
+        action = EdgeRuleAction(type="set_request_header", parameter1="X-Forwarded", parameter2="ip")
+        d = action.to_config_dict()
+        assert d == {"type": "set_request_header", "header": "X-Forwarded", "value": "ip"}
+
+    def test_redirect(self):
+        action = EdgeRuleAction(type="redirect", parameter1="https://example.com/new", parameter2="302")
+        d = action.to_config_dict()
+        assert d == {"type": "redirect", "url": "https://example.com/new", "status_code": "302"}
+
+    def test_redirect_default_status(self):
+        action = EdgeRuleAction(type="redirect", parameter1="https://example.com", parameter2=None)
+        d = action.to_config_dict()
+        assert d["status_code"] == "301"
+
+    def test_origin_url(self):
+        action = EdgeRuleAction(type="origin_url", parameter1="https://origin.example.com")
+        d = action.to_config_dict()
+        assert d == {"type": "origin_url", "url": "https://origin.example.com"}
+
+    def test_override_cache_time(self):
+        action = EdgeRuleAction(type="override_cache_time", parameter1="3600")
+        d = action.to_config_dict()
+        assert d == {"type": "override_cache_time", "seconds": 3600}
+
+    def test_override_cache_time_none(self):
+        action = EdgeRuleAction(type="override_cache_time", parameter1=None)
+        d = action.to_config_dict()
+        assert d["seconds"] == 0
+
+    def test_set_status_code(self):
+        action = EdgeRuleAction(type="set_status_code", parameter1="404")
+        d = action.to_config_dict()
+        assert d == {"type": "set_status_code", "code": 404}
+
+
+class TestEdgeRuleTriggerToConfigDict:
+    """Test EdgeRuleTrigger.to_config_dict() for export."""
+
+    def test_url_trigger(self):
+        trigger = EdgeRuleTrigger(type="url", patterns=["/admin/*"], match="any")
+        d = trigger.to_config_dict()
+        assert d == {"type": "url", "patterns": ["/admin/*"], "match": "any"}
+
+    def test_header_trigger_with_parameter(self):
+        trigger = EdgeRuleTrigger(type="request_header", patterns=["bot*"],
+                                  match="any", parameter="User-Agent")
+        d = trigger.to_config_dict()
+        assert d["parameter"] == "User-Agent"
+
+    def test_trigger_without_parameter(self):
+        trigger = EdgeRuleTrigger(type="country_code", patterns=["US", "CA"], match="none")
+        d = trigger.to_config_dict()
+        assert "parameter" not in d
+
+
+class TestGroupApiRulesToConfig:
+    """Test group_api_rules_to_config() for re-grouping split API rules."""
+
+    def test_single_rule_no_suffix(self):
+        rules = [
+            EdgeRule(
+                description="Block admin",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/admin/*"])],
+                actions=[EdgeRuleAction(type="block")],
+            )
+        ]
+        result = group_api_rules_to_config(rules)
+        assert len(result) == 1
+        assert result[0]["description"] == "Block admin"
+        assert len(result[0]["actions"]) == 1
+
+    def test_multi_action_grouped(self):
+        rules = [
+            EdgeRule(
+                description="Add headers (action 1)",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/*"])],
+                actions=[EdgeRuleAction(type="set_response_header",
+                                        parameter1="X-One", parameter2="1")],
+            ),
+            EdgeRule(
+                description="Add headers (action 2)",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/*"])],
+                actions=[EdgeRuleAction(type="set_response_header",
+                                        parameter1="X-Two", parameter2="2")],
+            ),
+        ]
+        result = group_api_rules_to_config(rules)
+        assert len(result) == 1
+        assert result[0]["description"] == "Add headers"
+        assert len(result[0]["actions"]) == 2
+        assert result[0]["actions"][0]["header"] == "X-One"
+        assert result[0]["actions"][1]["header"] == "X-Two"
+
+    def test_different_triggers_not_grouped(self):
+        rules = [
+            EdgeRule(
+                description="Rule A (action 1)",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/a/*"])],
+                actions=[EdgeRuleAction(type="block")],
+            ),
+            EdgeRule(
+                description="Rule A (action 1)",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/b/*"])],
+                actions=[EdgeRuleAction(type="force_ssl")],
+            ),
+        ]
+        result = group_api_rules_to_config(rules)
+        # Different triggers → different groups even though base desc matches
+        assert len(result) == 2
+
+    def test_mixed_single_and_multi(self):
+        rules = [
+            EdgeRule(
+                description="Block admin",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/admin/*"])],
+                actions=[EdgeRuleAction(type="block")],
+            ),
+            EdgeRule(
+                description="Headers (action 1)",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/*"])],
+                actions=[EdgeRuleAction(type="set_response_header",
+                                        parameter1="X-One", parameter2="1")],
+            ),
+            EdgeRule(
+                description="Headers (action 2)",
+                enabled=True,
+                trigger_match="all",
+                triggers=[EdgeRuleTrigger(type="url", patterns=["/*"])],
+                actions=[EdgeRuleAction(type="set_response_header",
+                                        parameter1="X-Two", parameter2="2")],
+            ),
+        ]
+        result = group_api_rules_to_config(rules)
+        assert len(result) == 2
+        # Find the grouped one
+        headers_rule = next(r for r in result if r["description"] == "Headers")
+        assert len(headers_rule["actions"]) == 2
+
+    def test_empty_rules(self):
+        result = group_api_rules_to_config([])
+        assert result == []
+
+
+class TestEdgeRulesManagerExport:
+    """Test EdgeRulesManager.export_rules()."""
+
+    @pytest.fixture
+    def er_manager(self, mock_client):
+        return EdgeRulesManager(mock_client)
+
+    def test_export_rules(self, er_manager, sample_edge_rule_response):
+        er_manager.client.get = Mock(return_value={
+            "EdgeRules": [sample_edge_rule_response],
+        })
+
+        result = er_manager.export_rules(67890)
+
+        assert len(result) == 1
+        assert result[0]["description"] == "Block admin access"
+        assert result[0]["actions"][0]["type"] == "block"
+        assert result[0]["triggers"][0]["type"] == "url"
+
+    def test_export_rules_empty(self, er_manager):
+        er_manager.client.get = Mock(return_value={"EdgeRules": []})
+        result = er_manager.export_rules(67890)
+        assert result == []

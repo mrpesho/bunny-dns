@@ -620,3 +620,168 @@ class TestIntegration:
         result = bunny_sync.sync(config)
 
         assert bunny_sync.dns_manager.sync_zone.call_count == 2
+
+
+class TestPull:
+    """Test pull functionality (--sot bunny)."""
+
+    @pytest.fixture
+    def bunny_sync(self):
+        with patch("bunny_dns.sync.BunnyClient"):
+            sync = BunnySync("test-api-key")
+            sync.dns_manager = MagicMock()
+            sync.pullzone_manager = MagicMock()
+            sync.edge_rules_manager = MagicMock()
+            return sync
+
+    def test_pull_requires_domain_or_all(self, bunny_sync):
+        with pytest.raises(ValueError, match="requires either --domain or --all"):
+            bunny_sync.pull()
+
+    def test_pull_single_domain(self, bunny_sync):
+        bunny_sync.dns_manager.export_zone.return_value = [
+            {"type": "A", "name": "@", "value": "1.2.3.4", "ttl": 300},
+        ]
+        bunny_sync.pullzone_manager.get_zones_for_domain.return_value = []
+
+        result = bunny_sync.pull(domain="example.com")
+
+        assert "example.com" in result["domains"]
+        assert len(result["domains"]["example.com"]["dns_records"]) == 1
+        assert result["domains"]["example.com"]["pull_zones"] == {}
+        bunny_sync.dns_manager.export_zone.assert_called_once_with("example.com")
+
+    def test_pull_single_domain_with_pullzone(self, bunny_sync):
+        bunny_sync.dns_manager.export_zone.return_value = []
+
+        from bunny_dns.pullzone_manager import PullZone, Hostname
+        pz = PullZone(
+            name="my-cdn", id=1,
+            origin_url="https://origin.example.com",
+            origin_host_header="origin.example.com",
+            hostnames=[
+                Hostname(value="cdn.example.com", is_system_hostname=False),
+                Hostname(value="my-cdn.b-cdn.net", is_system_hostname=True),
+            ],
+        )
+        bunny_sync.pullzone_manager.get_zones_for_domain.return_value = [pz]
+        bunny_sync.edge_rules_manager.export_rules.return_value = []
+
+        result = bunny_sync.pull(domain="example.com")
+
+        assert "my-cdn" in result["domains"]["example.com"]["pull_zones"]
+        pz_config = result["domains"]["example.com"]["pull_zones"]["my-cdn"]
+        assert pz_config["origin_url"] == "https://origin.example.com"
+        assert pz_config["hostnames"] == ["cdn.example.com"]
+
+    def test_pull_dns_only(self, bunny_sync):
+        bunny_sync.dns_manager.export_zone.return_value = [
+            {"type": "A", "name": "@", "value": "1.2.3.4", "ttl": 300},
+        ]
+
+        result = bunny_sync.pull(domain="example.com", dns_only=True)
+
+        assert "dns_records" in result["domains"]["example.com"]
+        assert "pull_zones" not in result["domains"]["example.com"]
+        bunny_sync.pullzone_manager.get_zones_for_domain.assert_not_called()
+
+    def test_pull_pullzones_only(self, bunny_sync):
+        bunny_sync.pullzone_manager.get_zones_for_domain.return_value = []
+
+        result = bunny_sync.pull(domain="example.com", pullzones_only=True)
+
+        assert "pull_zones" in result["domains"]["example.com"]
+        assert "dns_records" not in result["domains"]["example.com"]
+        bunny_sync.dns_manager.export_zone.assert_not_called()
+
+    def test_pull_all_domains(self, bunny_sync):
+        bunny_sync.dns_manager.export_all_zones.return_value = {
+            "example.com": [{"type": "A", "name": "@", "value": "1.2.3.4", "ttl": 300}],
+            "test.com": [{"type": "A", "name": "@", "value": "5.6.7.8", "ttl": 300}],
+        }
+        bunny_sync.pullzone_manager.list_zones.return_value = []
+
+        result = bunny_sync.pull(pull_all=True)
+
+        assert "example.com" in result["domains"]
+        assert "test.com" in result["domains"]
+        assert len(result["domains"]["example.com"]["dns_records"]) == 1
+
+    def test_pull_all_associates_pullzones_to_domains(self, bunny_sync):
+        bunny_sync.dns_manager.export_all_zones.return_value = {
+            "example.com": [{"type": "A", "name": "@", "value": "1.2.3.4", "ttl": 300}],
+        }
+
+        from bunny_dns.pullzone_manager import PullZone, Hostname
+        pz = PullZone(
+            name="my-cdn", id=1,
+            origin_url="https://origin.example.com",
+            hostnames=[
+                Hostname(value="cdn.example.com", is_system_hostname=False),
+                Hostname(value="my-cdn.b-cdn.net", is_system_hostname=True),
+            ],
+        )
+        bunny_sync.pullzone_manager.list_zones.return_value = [pz]
+        bunny_sync.edge_rules_manager.export_rules.return_value = []
+
+        result = bunny_sync.pull(pull_all=True)
+
+        assert "my-cdn" in result["domains"]["example.com"]["pull_zones"]
+
+    def test_pull_all_unmatched_pullzone_warns(self, bunny_sync, capsys):
+        bunny_sync.dns_manager.export_all_zones.return_value = {
+            "example.com": [],
+        }
+
+        from bunny_dns.pullzone_manager import PullZone, Hostname
+        pz = PullZone(
+            name="orphan-cdn", id=1,
+            hostnames=[
+                Hostname(value="cdn.unknown.com", is_system_hostname=False),
+            ],
+        )
+        bunny_sync.pullzone_manager.list_zones.return_value = [pz]
+        bunny_sync.edge_rules_manager.export_rules.return_value = []
+
+        result = bunny_sync.pull(pull_all=True)
+
+        captured = capsys.readouterr()
+        assert "orphan-cdn" in captured.err
+        assert "could not be matched" in captured.err
+
+    def test_pull_domain_not_found_returns_none(self, bunny_sync):
+        bunny_sync.dns_manager.export_zone.return_value = None
+        bunny_sync.pullzone_manager.get_zones_for_domain.return_value = []
+
+        result = bunny_sync.pull(domain="typo-domain.com")
+
+        assert result is None
+
+    def test_pull_domain_no_dns_but_has_pullzones(self, bunny_sync):
+        """Domain not found in DNS but has pull zones — still returns config."""
+        bunny_sync.dns_manager.export_zone.return_value = None
+
+        from bunny_dns.pullzone_manager import PullZone, Hostname
+        pz = PullZone(
+            name="my-cdn", id=1,
+            hostnames=[Hostname(value="cdn.example.com", is_system_hostname=False)],
+        )
+        bunny_sync.pullzone_manager.get_zones_for_domain.return_value = [pz]
+        bunny_sync.edge_rules_manager.export_rules.return_value = []
+
+        result = bunny_sync.pull(domain="example.com")
+
+        assert result is not None
+        assert result["domains"]["example.com"]["dns_records"] == []
+        assert "my-cdn" in result["domains"]["example.com"]["pull_zones"]
+
+    def test_pull_all_dns_only(self, bunny_sync):
+        bunny_sync.dns_manager.export_all_zones.return_value = {
+            "example.com": [{"type": "A", "name": "@", "value": "1.2.3.4", "ttl": 300}],
+        }
+
+        result = bunny_sync.pull(pull_all=True, dns_only=True)
+
+        assert "dns_records" in result["domains"]["example.com"]
+        assert "pull_zones" not in result["domains"]["example.com"]
+        bunny_sync.pullzone_manager.list_zones.assert_not_called()

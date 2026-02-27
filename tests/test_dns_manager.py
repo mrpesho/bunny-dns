@@ -481,6 +481,29 @@ class TestDNSManagerSyncZone:
         assert len(result["created"]) == 1
         dns_manager.create_zone.assert_not_called()
 
+    def test_sync_multiple_records_mixed(self, dns_manager):
+        existing_records = [
+            DNSRecord(type="A", name="www", value="1.2.3.4", ttl=300, id=1),
+            DNSRecord(type="TXT", name="old", value="remove-me", id=2),
+        ]
+        existing_zone = DNSZone(domain="example.com", id=1, records=existing_records)
+        dns_manager.get_zone_by_domain = Mock(return_value=existing_zone)
+        dns_manager.add_record = Mock(return_value=DNSRecord(type="CNAME", name="www2", value="example.com", id=3))
+        dns_manager.update_record = Mock()
+        dns_manager.delete_record = Mock()
+
+        result = dns_manager.sync_zone(
+            domain="example.com",
+            desired_records=[
+                {"type": "A", "name": "www", "value": "1.2.3.4", "ttl": 600},
+                {"type": "CNAME", "name": "www2", "value": "example.com"},
+            ],
+        )
+
+        assert len(result["updated"]) == 1
+        assert len(result["created"]) == 1
+        assert len(result["deleted"]) == 1
+
     def test_sync_matches_at_with_empty_string(self, dns_manager):
         """Critical test: Config uses @ but API returns empty string - should match."""
         # API returns record with empty name
@@ -497,3 +520,94 @@ class TestDNSManagerSyncZone:
         # Should recognize as unchanged, not create duplicate
         assert len(result["unchanged"]) == 1
         assert len(result["created"]) == 0
+
+
+class TestDNSRecordToConfigDict:
+    """Test DNSRecord.to_config_dict() for export."""
+
+    def test_a_record(self):
+        record = DNSRecord(type="A", name="www", value="1.2.3.4", ttl=300)
+        d = record.to_config_dict()
+        assert d == {"type": "A", "name": "www", "value": "1.2.3.4", "ttl": 300}
+
+    def test_root_name_becomes_at(self):
+        record = DNSRecord(type="A", name="", value="1.2.3.4", ttl=300)
+        d = record.to_config_dict()
+        assert d["name"] == "@"
+
+    def test_mx_record_includes_priority(self):
+        record = DNSRecord(type="MX", name="", value="mail.example.com", ttl=300, priority=10)
+        d = record.to_config_dict()
+        assert d["priority"] == 10
+        assert "weight" not in d
+        assert "port" not in d
+
+    def test_srv_record_includes_all_fields(self):
+        record = DNSRecord(type="SRV", name="_sip._tcp", value="sip.example.com",
+                          ttl=300, priority=10, weight=5, port=5060)
+        d = record.to_config_dict()
+        assert d["priority"] == 10
+        assert d["weight"] == 5
+        assert d["port"] == 5060
+
+    def test_zero_optional_fields_omitted(self):
+        record = DNSRecord(type="A", name="www", value="1.2.3.4", ttl=300,
+                          priority=0, weight=0, port=0)
+        d = record.to_config_dict()
+        assert "priority" not in d
+        assert "weight" not in d
+        assert "port" not in d
+
+    def test_none_optional_fields_omitted(self):
+        record = DNSRecord(type="A", name="www", value="1.2.3.4", ttl=300)
+        d = record.to_config_dict()
+        assert "priority" not in d
+        assert "weight" not in d
+        assert "port" not in d
+
+
+class TestDNSManagerExport:
+    """Test DNSManager export methods."""
+
+    @pytest.fixture
+    def dns_manager(self, mock_client):
+        return DNSManager(mock_client)
+
+    def test_export_zone(self, dns_manager, sample_dns_zone_response):
+        dns_manager.get_zone_by_domain = Mock(
+            return_value=DNSZone.from_api_response(sample_dns_zone_response)
+        )
+
+        records = dns_manager.export_zone("example.com")
+
+        assert len(records) == 3
+        assert records[0]["type"] == "A"
+        assert records[0]["name"] == "@"
+        assert records[1]["type"] == "CNAME"
+        assert records[1]["name"] == "www"
+        assert records[2]["type"] == "MX"
+        assert records[2]["priority"] == 10
+
+    def test_export_zone_not_found(self, dns_manager):
+        dns_manager.get_zone_by_domain = Mock(return_value=None)
+        records = dns_manager.export_zone("notfound.com")
+        assert records is None
+
+    def test_export_all_zones(self, dns_manager, sample_dns_zone_response):
+        dns_manager.list_zones = Mock(return_value=[
+            DNSZone(domain="example.com", id=12345),
+            DNSZone(domain="test.com", id=67890),
+        ])
+        zone1 = DNSZone.from_api_response(sample_dns_zone_response)
+        zone2 = DNSZone(domain="test.com", id=67890, records=[
+            DNSRecord(type="A", name="", value="5.6.7.8", ttl=300),
+        ])
+        dns_manager.get_zone = Mock(side_effect=[zone1, zone2])
+
+        result = dns_manager.export_all_zones()
+
+        assert "example.com" in result
+        assert "test.com" in result
+        assert len(result["example.com"]) == 3
+        assert len(result["test.com"]) == 1
+        assert result["test.com"][0]["name"] == "@"
