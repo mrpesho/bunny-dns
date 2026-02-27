@@ -9,6 +9,7 @@ A Python CLI tool for declaratively managing DNS zones, Pull Zones, and Edge Rul
 - **Pull Zone management** - Create CDN pull zones with custom origins and regional pricing
 - **Hostname & SSL** - Automatically add custom hostnames and provision free SSL certificates
 - **Edge Rules** - Configure CDN edge rules with friendly action/trigger names
+- **Pull from bunny.net** - Export existing infrastructure as a config JSON (`--sot bunny`)
 - **Dry-run mode** - Preview changes before applying
 - **Domain isolation** - Sync specific domains without affecting others
 
@@ -127,6 +128,10 @@ BUNNY_API_KEY=your-api-key-here
 
 ## Usage
 
+> **Note:** If you installed with `uv`, prefix commands with `uv run` (e.g. `uv run bunny-dns ...`).
+
+### Push (local → bunny.net)
+
 ```bash
 # Sync a specific domain (recommended)
 bunny-dns -c config.json --domain example.com
@@ -147,16 +152,38 @@ bunny-dns -c config.json --domain example.com --no-delete
 bunny-dns -c config.json
 ```
 
+### Pull (bunny.net → local)
+
+Export your current bunny.net configuration as JSON — useful for bootstrapping a config from existing infrastructure or verifying drift.
+
+```bash
+# Pull a specific domain
+bunny-dns --sot bunny --domain example.com
+
+# Pull all DNS zones on the account
+bunny-dns --sot bunny --all
+
+# Write to file instead of stdout
+bunny-dns --sot bunny --domain example.com -o config.json
+
+# Pull DNS only or pull zones only
+bunny-dns --sot bunny --domain example.com --dns-only
+bunny-dns --sot bunny --domain example.com --pullzones-only
+```
+
 ### CLI Options
 
 | Option | Description |
 |--------|-------------|
-| `-c, --config` | Path to JSON configuration file (required) |
-| `-d, --domain` | Only sync this specific domain |
-| `-n, --dry-run` | Preview changes without applying |
-| `--dns-only` | Only sync DNS zones |
-| `--pullzones-only` | Only sync Pull Zones |
-| `--no-delete` | Don't delete records not in config |
+| `-c, --config` | Path to JSON configuration file (required for push) |
+| `-d, --domain` | Only sync/pull this specific domain |
+| `-n, --dry-run` | Preview changes without applying (push only) |
+| `--dns-only` | Only sync/pull DNS zones |
+| `--pullzones-only` | Only sync/pull Pull Zones |
+| `--no-delete` | Don't delete records not in config (push only) |
+| `--sot` | Source of truth: `local` (default, push) or `bunny` (pull) |
+| `--all` | Pull all DNS zones on the account (with `--sot bunny`) |
+| `-o, --output` | Write pull output to file instead of stdout |
 | `--api-key` | API key (defaults to `BUNNY_API_KEY` env var) |
 
 ## Check Propagation Status
