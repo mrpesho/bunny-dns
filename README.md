@@ -16,21 +16,7 @@ A Python CLI tool for declaratively managing DNS zones, Pull Zones, and Edge Rul
 ## Installation
 
 ```bash
-pip install bunny-dns
-```
-
-Or with [uv](https://docs.astral.sh/uv/):
-
-```bash
 uv pip install bunny-dns
-```
-
-For development:
-
-```bash
-git clone https://github.com/mrpesho/bunny-dns.git
-cd bunny-dns
-pip install -e ".[dev]"
 ```
 
 ## Configuration
@@ -128,28 +114,26 @@ BUNNY_API_KEY=your-api-key-here
 
 ## Usage
 
-> **Note:** If you installed with `uv`, prefix commands with `uv run` (e.g. `uv run bunny-dns ...`).
-
 ### Push (local → bunny.net)
 
 ```bash
 # Sync a specific domain (recommended)
-bunny-dns -c config.json --domain example.com
+uv run bunny-dns -c config.json --domain example.com
 
 # Dry run - preview changes without applying
-bunny-dns -c config.json --domain example.com --dry-run
+uv run bunny-dns -c config.json --domain example.com --dry-run
 
 # DNS only
-bunny-dns -c config.json --domain example.com --dns-only
+uv run bunny-dns -c config.json --domain example.com --dns-only
 
 # Pull zones only
-bunny-dns -c config.json --domain example.com --pullzones-only
+uv run bunny-dns -c config.json --domain example.com --pullzones-only
 
 # Additive mode - don't delete records not in config
-bunny-dns -c config.json --domain example.com --no-delete
+uv run bunny-dns -c config.json --domain example.com --no-delete
 
 # Sync all domains in config
-bunny-dns -c config.json
+uv run bunny-dns -c config.json
 ```
 
 ### Pull (bunny.net → local)
@@ -158,17 +142,17 @@ Export your current bunny.net configuration as JSON — useful for bootstrapping
 
 ```bash
 # Pull a specific domain
-bunny-dns --sot bunny --domain example.com
+uv run bunny-dns --sot bunny --domain example.com
 
 # Pull all DNS zones on the account
-bunny-dns --sot bunny --all
+uv run bunny-dns --sot bunny --all
 
 # Write to file instead of stdout
-bunny-dns --sot bunny --domain example.com -o config.json
+uv run bunny-dns --sot bunny --domain example.com -o config.json
 
 # Pull DNS only or pull zones only
-bunny-dns --sot bunny --domain example.com --dns-only
-bunny-dns --sot bunny --domain example.com --pullzones-only
+uv run bunny-dns --sot bunny --domain example.com --dns-only
+uv run bunny-dns --sot bunny --domain example.com --pullzones-only
 ```
 
 ### CLI Options
@@ -192,10 +176,10 @@ After updating nameservers, check if DNS has propagated:
 
 ```bash
 # Basic check
-bunny-dns-check example.com
+uv run bunny-dns-check example.com
 
 # Include pull zone hostname/SSL checks
-bunny-dns-check example.com -c config.json
+uv run bunny-dns-check example.com -c config.json
 ```
 
 Output:
@@ -218,16 +202,18 @@ PULL ZONE HOSTNAMES:
 
 ## Workflow: Migrating to Bunny DNS
 
-1. **Create config** with your current DNS records
-2. **Run with dry-run** to verify: `bunny-dns -c config.json --domain example.com --dry-run`
-3. **Apply changes**: `bunny-dns -c config.json --domain example.com`
-   - Pull zone hostnames are added, but SSL certificates will fail (DNS not pointing to bunny yet)
-4. **Update nameservers** at your registrar to [bunny.net's nameservers](https://docs.bunny.net/docs/dns-getting-started):
-   - `kiki.bunny.net`
-   - `coco.bunny.net`
-5. **Check propagation**: `bunny-dns-check example.com -c config.json`
-6. **Re-run sync** to load SSL certificates: `bunny-dns -c config.json --domain example.com`
-   - The script automatically detects hostnames missing certificates and loads them
+If you already have DNS elsewhere and want to move to bunny.net, you can bootstrap your config from your existing setup using pull, then push it:
+
+```bash
+# Export your current bunny.net state (if zone already exists)
+uv run bunny-dns --sot bunny --domain example.com -o config.json
+
+# Or create config.json manually, then:
+uv run bunny-dns -c config.json --domain example.com --dry-run   # preview
+uv run bunny-dns -c config.json --domain example.com              # apply
+```
+
+Then update nameservers at your registrar to `kiki.bunny.net` and `coco.bunny.net`, verify with `uv run bunny-dns-check`, and re-run sync to load SSL certificates. See the [Fathom Analytics](#use-case-fathom-analytics-proxy) section below for a full step-by-step example.
 
 ## Safety Features
 
@@ -237,19 +223,27 @@ PULL ZONE HOSTNAMES:
 - **Rate limit handling** - Auto-retry with exponential backoff
 - **Explicit domain flag** - `--domain` ensures you only sync what you intend
 
-## Testing
+## Development
+
+```bash
+git clone https://github.com/mrpesho/bunny-dns.git
+cd bunny-dns
+uv pip install -e ".[dev]"
+```
+
+### Testing
 
 The project includes a comprehensive test suite with 99% code coverage.
 
 ```bash
 # Run all tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run with coverage report
-pytest tests/ --cov=bunny_dns --cov-report=term-missing
+uv run pytest tests/ --cov=bunny_dns --cov-report=term-missing
 
 # Run specific test file
-pytest tests/test_dns_manager.py -v
+uv run pytest tests/test_dns_manager.py -v
 ```
 
 ### Test Structure
@@ -264,22 +258,26 @@ pytest tests/test_dns_manager.py -v
 
 ## Use Case: Fathom Analytics Proxy
 
-A common use case is proxying [Fathom Analytics](https://usefathom.com) through Bunny CDN to bypass ad blockers:
+Ad blockers block requests to known analytics domains like `cdn.usefathom.com`. By proxying [Fathom Analytics](https://usefathom.com) through your own subdomain via Bunny CDN, requests come from `ana.yourdomain.com` instead — which blockers don't recognize.
+
+### 1. Create your config
+
+Create a `config.json` that sets up both the DNS CNAME record and a Bunny Pull Zone for your domain. Replace `example.com` with your actual domain and `ana-example` with a unique pull zone name:
 
 ```json
 {
   "domains": {
     "example.com": {
       "dns_records": [
-        {"type": "CNAME", "name": "fa", "value": "fa-example.b-cdn.net", "ttl": 3600}
+        {"type": "CNAME", "name": "ana", "value": "ana-example.b-cdn.net", "ttl": 3600}
       ],
       "pull_zones": {
-        "fa-example": {
+        "ana-example": {
           "origin_url": "https://cdn.usefathom.com",
           "origin_host_header": "cdn.usefathom.com",
           "type": "standard",
           "enabled_regions": ["EU", "US"],
-          "hostnames": ["fa.example.com"],
+          "hostnames": ["ana.example.com"],
           "edge_rules": []
         }
       }
@@ -288,7 +286,52 @@ A common use case is proxying [Fathom Analytics](https://usefathom.com) through 
 }
 ```
 
-Then use `fa.example.com` as your Fathom custom domain.
+This configures:
+- A **CNAME record** pointing `ana.example.com` to your Bunny pull zone
+- A **Pull Zone** that proxies requests to Fathom's CDN
+- A **custom hostname** with automatic free SSL
+
+### 2. Preview changes
+
+```bash
+uv run bunny-dns -c config.json --domain example.com --dry-run
+```
+
+### 3. Apply
+
+```bash
+uv run bunny-dns -c config.json --domain example.com
+```
+
+> **Note:** If your domain's nameservers are not yet pointing to bunny.net, SSL certificate provisioning will fail on the first run. That's expected — it will succeed after you update nameservers.
+
+### 4. Update nameservers (if not already on bunny.net)
+
+At your domain registrar, set the nameservers to:
+- `kiki.bunny.net`
+- `coco.bunny.net`
+
+### 5. Verify propagation
+
+```bash
+uv run bunny-dns-check example.com -c config.json
+```
+
+### 6. Re-run to load SSL certificates
+
+```bash
+uv run bunny-dns -c config.json --domain example.com
+```
+
+The tool detects hostnames missing certificates and loads them automatically.
+
+### 7. Configure Fathom
+
+In your Fathom dashboard, set `ana.example.com` as your custom domain. Update your tracking script to use it:
+
+```html
+<script src="https://ana.example.com/script.js" data-site="YOUR_SITE_ID" defer></script>
+```
 
 ## License
 
